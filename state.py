@@ -17,8 +17,10 @@ class DoseCheckState(TypedDict):
     # Retrieval Agent output
     retrieved_chunks: list[str]
     retrieved_sources: list[str]
+    retrieved_context: Optional[str]
 
     # Interaction Tool (MCP) output
+    tool_result: Optional[dict]
     interaction_severity: Optional[Literal["safe", "caution", "dangerous", "unknown"]]
     interaction_explanation: Optional[str]
 
