@@ -1,5 +1,6 @@
 import streamlit as st
 from rag.retriever import retrieve_relevant_documents
+from graph import app as agent_app
 
 # =========================================================
 # PAGE CONFIGURATION
@@ -320,8 +321,21 @@ if check_button:
 
         full_query = ". ".join(query_parts) if query_parts else (question.strip() or medicine_question.strip())
 
-        # Query real ChromaDB vector database and clinical safety filter
-        with st.spinner("Analyzing safety, scanning red-flags, and searching medical knowledge base..."):
+        # Prepare state for LangGraph multi-agent pipeline
+        meds_list = [m.strip() for m in current_medicines.split(",") if m.strip()] if current_medicines else []
+        new_med_str = medicine_question.strip()
+        user_q_str = question.strip() or f"Is {new_med_str} safe to take?"
+
+        initial_state = {
+            "current_medicines": meds_list,
+            "new_medicine": new_med_str,
+            "user_question": user_q_str,
+            "trace_log": []
+        }
+
+        # Run both the Multi-Agent LangGraph pipeline and RAG Retrieval
+        with st.spinner("Multi-Agent Safety Pipeline analyzing query..."):
+            agent_res = agent_app.invoke(initial_state)
             rag_result = retrieve_relevant_documents(full_query)
 
         # -------------------------------------------------
@@ -335,22 +349,23 @@ if check_button:
         elif demo_mode == "🔴 Emergency — Escalate":
             result_type = "emergency"
         else:
-            # Live / Manual mode routes dynamically from the RAG & Safety Engine
-            if rag_result["decision"] == "ESCALATE":
+            # Live / Manual mode routes dynamically from the Multi-Agent Engine
+            if agent_res.get("red_flag_triggered"):
                 result_type = "emergency"
-            elif rag_result["decision"] == "ANSWER":
+            elif agent_res.get("route") == "safe_answer":
                 result_type = "normal"
             else:
                 result_type = "uncertain"
 
-        # Extract values from RAG engine
-        confidence_score = rag_result.get("confidence_score", 0.85)
-        risk_level = rag_result.get("risk_level", "LOW")
-        decision = rag_result.get("decision", "ANSWER")
-        answer_context = rag_result.get("answer_context", "")
+        # Extract values from LangGraph agent output + RAG engine
+        confidence_score = agent_res.get("confidence_score") or rag_result.get("confidence_score", 0.85)
+        risk_level = agent_res.get("risk_level") or rag_result.get("risk_level", "LOW")
+        decision = "ANSWER" if result_type == "normal" else "ESCALATE"
+        answer_context = agent_res.get("final_answer") or rag_result.get("answer_context", "")
         sources = rag_result.get("sources", [])
         top_chunks = rag_result.get("top_chunks", [])
-        escalation_reason = rag_result.get("escalation_reason", "")
+        escalation_reason = agent_res.get("red_flag_reason") or rag_result.get("escalation_reason", "")
+        trace_log = agent_res.get("trace_log", [])
 
         st.divider()
 
@@ -495,23 +510,32 @@ if check_button:
                 expanded=True
             ):
 
-                closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "N/A"
-                steps = [
-                    f"✓ Intake Agent — Processed query: '{full_query}'",
-                    "✓ Red Flag Agent — No life-threatening emergency symptoms detected",
-                    f"✓ RAG Retriever — Retrieved {len(top_chunks)} evidence chunks from ChromaDB (closest distance: {closest_dist_str})",
-                    "✓ Interaction Tool — Medication cross-check completed",
-                    "✓ Response Agent — Grounded response synthesized from official clinical protocols",
-                    f"✓ Safety Critic — Confidence assessed at {int(confidence_score * 100)}%",
-                    f"✓ Router — Decision: {decision}"
-                ]
+                if trace_log:
+                    for step in trace_log:
+                        node_name = step.get("node", "").replace("_", " ").title()
+                        reason = step.get("reason", "")
+                        reason_str = f" — <i>{reason}</i>" if reason else ""
+                        st.markdown(
+                            f'<div class="trace-item">✓ <b>{node_name} Node</b>{reason_str}</div>',
+                            unsafe_allow_html=True
+                        )
+                else:
+                    closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "N/A"
+                    steps = [
+                        f"✓ Intake Agent — Processed query: '{full_query}'",
+                        "✓ Red Flag Agent — No life-threatening emergency symptoms detected",
+                        f"✓ RAG Retriever — Retrieved {len(top_chunks)} evidence chunks from ChromaDB (closest distance: {closest_dist_str})",
+                        "✓ Interaction Tool — Medication cross-check completed",
+                        "✓ Response Agent — Grounded response synthesized from official clinical protocols",
+                        f"✓ Safety Critic — Confidence assessed at {int(confidence_score * 100)}%",
+                        f"✓ Router — Decision: {decision}"
+                    ]
 
-                for step in steps:
-
-                    st.markdown(
-                        f'<div class="trace-item">{step}</div>',
-                        unsafe_allow_html=True
-                    )
+                    for step in steps:
+                        st.markdown(
+                            f'<div class="trace-item">{step}</div>',
+                            unsafe_allow_html=True
+                        )
 
 
             # -------------------------------------------------
@@ -641,22 +665,31 @@ if check_button:
                 expanded=True
             ):
 
-                closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "> 1.15"
-                steps = [
-                    f"✓ Intake Agent — Question analyzed: '{full_query}'",
-                    "⚠ Information incomplete or outside knowledge base",
-                    f"✓ RAG Retriever — Vector distance: {closest_dist_str} (exceeds safety threshold 1.15)",
-                    "⛔ Definitive answer blocked to prevent medical misinformation",
-                    f"✓ Safety Critic — Confidence: {int(confidence_score * 100)}%",
-                    f"→ Router — Decision: {decision if decision != 'ANSWER' else 'CLARIFY'}"
-                ]
+                if trace_log:
+                    for step in trace_log:
+                        node_name = step.get("node", "").replace("_", " ").title()
+                        reason = step.get("reason", "")
+                        reason_str = f" — <i>{reason}</i>" if reason else ""
+                        st.markdown(
+                            f'<div class="trace-item">✓ <b>{node_name} Node</b>{reason_str}</div>',
+                            unsafe_allow_html=True
+                        )
+                else:
+                    closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "> 1.15"
+                    steps = [
+                        f"✓ Intake Agent — Question analyzed: '{full_query}'",
+                        "⚠ Information incomplete or outside knowledge base",
+                        f"✓ RAG Retriever — Vector distance: {closest_dist_str} (exceeds safety threshold 1.15)",
+                        "⛔ Definitive answer blocked to prevent medical misinformation",
+                        f"✓ Safety Critic — Confidence: {int(confidence_score * 100)}%",
+                        f"→ Router — Decision: {decision if decision != 'ANSWER' else 'CLARIFY'}"
+                    ]
 
-                for step in steps:
-
-                    st.markdown(
-                        f'<div class="trace-item">{step}</div>',
-                        unsafe_allow_html=True
-                    )
+                    for step in steps:
+                        st.markdown(
+                            f'<div class="trace-item">{step}</div>',
+                            unsafe_allow_html=True
+                        )
 
 
         # =================================================
@@ -790,20 +823,29 @@ if check_button:
                 expanded=True
             ):
 
-                steps = [
-                    f"✓ Intake Agent — Query received: '{full_query}'",
-                    f"🚨 Red Flag Agent — Life-threatening symptom matched: {escalation_reason or 'Emergency symptom'}",
-                    "⛔ Normal response blocked — Short-circuit to emergency protocol",
-                    "⚠ Safety System — CRITICAL RISK",
-                    "→ Router — Decision: ESCALATE"
-                ]
+                if trace_log:
+                    for step in trace_log:
+                        node_name = step.get("node", "").replace("_", " ").title()
+                        reason = step.get("reason", "")
+                        reason_str = f" — <i>{reason}</i>" if reason else ""
+                        st.markdown(
+                            f'<div class="trace-item">✓ <b>{node_name} Node</b>{reason_str}</div>',
+                            unsafe_allow_html=True
+                        )
+                else:
+                    steps = [
+                        f"✓ Intake Agent — Query received: '{full_query}'",
+                        f"🚨 Red Flag Agent — Life-threatening symptom matched: {escalation_reason or 'Emergency symptom'}",
+                        "⛔ Normal response blocked — Short-circuit to emergency protocol",
+                        "⚠ Safety System — CRITICAL RISK",
+                        "→ Router — Decision: ESCALATE"
+                    ]
 
-                for step in steps:
-
-                    st.markdown(
-                        f'<div class="trace-item">{step}</div>',
-                        unsafe_allow_html=True
-                    )
+                    for step in steps:
+                        st.markdown(
+                            f'<div class="trace-item">{step}</div>',
+                            unsafe_allow_html=True
+                        )
 
 
 # =========================================================

@@ -313,6 +313,11 @@ def run_interactive() -> None:
 
 if __name__ == "__main__":
     import sys
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
     if "--interactive" in sys.argv or "-i" in sys.argv:
         run_interactive()
