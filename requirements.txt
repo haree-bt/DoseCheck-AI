@@ -1,2 +1,3 @@
 ﻿chromadb
 langgraph
+streamlit
