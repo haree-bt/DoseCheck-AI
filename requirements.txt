@@ -1,3 +1,4 @@
-﻿chromadb
+chromadb
 langgraph
 streamlit
+fastmcp

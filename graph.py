@@ -1,14 +1,26 @@
+import sys
 from langgraph.graph import StateGraph, END
 from state import DoseCheckState
-from rag.retriever import retrieve_relevant_documents, check_for_red_flags
+
+# Teammates' modules
+from safety_guardrail import (
+    detect_red_flags,
+    ConfidenceInputs,
+    compute_confidence,
+    classify_risk,
+    RiskThresholds,
+)
+from rag.retriever import retrieve_relevant_documents
 from interaction_tool import check_interaction
 from medication_tool import lookup_medicine
 from escalation_tool import escalate_case
 
+
 def log_step(state: DoseCheckState, node_name: str, output: dict, reason: str = "") -> dict:
-    """Call this at the end of every node — this IS your observability requirement."""
+    """Observability requirement: record each node execution into trace_log."""
     entry = {"node": node_name, "output": output, "reason": reason}
     return {"trace_log": state.get("trace_log", []) + [entry]}
+
 
 # --- 1. Intake Agent ---
 def intake_agent(state: DoseCheckState) -> dict:
@@ -16,11 +28,14 @@ def intake_agent(state: DoseCheckState) -> dict:
     current_meds = state.get("current_medicines", [])
     new_med = state.get("new_medicine", "")
 
-    # Extract common symptom keywords
-    symptom_keywords = ["headache", "fever", "pain", "swelling", "breathing", "cough", "nausea", "rash", "dizziness"]
+    # Extract symptoms from question
+    symptom_keywords = [
+        "headache", "fever", "pain", "swelling", "breathing", "cough",
+        "nausea", "rash", "dizziness", "bleeding"
+    ]
     found_symptoms = [s for s in symptom_keywords if s in question.lower()]
 
-    # Infer user intent
+    # Infer intent
     if current_meds and new_med:
         intent = "drug_interaction_check"
     elif any(w in question.lower() for w in ["dose", "dosage", "how much", "max", "limit"]):
@@ -36,18 +51,20 @@ def intake_agent(state: DoseCheckState) -> dict:
     }
     return {**result, **log_step(state, "intake_agent", result, reason=f"intent={intent}")}
 
+
 # --- 2. Red-Flag Agent ---
 def red_flag_agent(state: DoseCheckState) -> dict:
-    query = state.get("user_question", "")
-    detected_flags = check_for_red_flags(query)
-    is_triggered = len(detected_flags) > 0
-    reason = f"Potential medical emergency detected: {', '.join(detected_flags)}" if is_triggered else None
+    text_to_check = state.get("user_question", "") + " " + " ".join(state.get("extracted_symptoms", []))
+    red_flags = detect_red_flags(text_to_check)
+    triggered = len(red_flags) > 0
+    reason = f"Potential medical emergency detected: {', '.join(red_flags)}" if triggered else None
 
     result = {
-        "red_flag_triggered": is_triggered,
+        "red_flag_triggered": triggered,
         "red_flag_reason": reason
     }
-    return {**result, **log_step(state, "red_flag_agent", result, reason=f"triggered={is_triggered}")}
+    return {**result, **log_step(state, "red_flag_agent", result, reason=f"triggered={triggered}")}
+
 
 # --- 3. Retrieval Agent (RAG) ---
 def retrieval_agent(state: DoseCheckState) -> dict:
@@ -71,41 +88,42 @@ def retrieval_agent(state: DoseCheckState) -> dict:
         "retrieved_context": rag_output.get("answer_context", "")
     }
     return {
-        **result, 
+        **result,
         **log_step(
-            state, 
-            "retrieval_agent", 
-            result, 
+            state,
+            "retrieval_agent",
+            result,
             reason=f"decision={rag_output['decision']}, confidence={rag_output['confidence_score']}"
         )
     }
 
+
 # --- 4. Medication & Interaction Tool (MCP) ---
+RISK_TO_SEVERITY = {
+    "low": "safe",
+    "moderate": "caution",
+    "high": "dangerous",
+    "unknown": "unknown",
+}
+
 def interaction_tool_node(state: DoseCheckState) -> dict:
     current_meds = state.get("current_medicines", [])
     new_med = state.get("new_medicine", "")
 
     tool_res = None
     severity = "safe"
-    explanation = "No known dangerous interaction identified."
+    explanation = "No potential interactions identified or single medication inquiry."
 
-    # Check drug-drug interaction against each current medication
     if new_med and current_meds:
         for med in current_meds:
             check = check_interaction(new_med, med)
             tool_res = check
             if check.get("found"):
                 risk = check.get("risk", "low")
-                if risk in ["high", "dangerous"]:
-                    severity = "dangerous"
-                    explanation = check.get("message", "High risk interaction detected.")
+                severity = RISK_TO_SEVERITY.get(risk, "unknown")
+                explanation = check.get("message", "Interaction checked.")
+                if severity == "dangerous":
                     break
-                elif risk in ["moderate", "caution"]:
-                    severity = "caution"
-                    explanation = check.get("message", "Moderate interaction noted.")
-                else:
-                    severity = "safe"
-                    explanation = check.get("message", "No major interaction noted.")
             else:
                 severity = "unknown"
                 explanation = check.get("message", "Interaction information unavailable in database.")
@@ -126,22 +144,23 @@ def interaction_tool_node(state: DoseCheckState) -> dict:
     }
     return {**result, **log_step(state, "interaction_tool", result, reason=f"severity={severity}")}
 
+
 # --- 5. Response / Drafter Agent ---
 def response_agent(state: DoseCheckState) -> dict:
     chunks = state.get("retrieved_chunks", [])
     explanation = state.get("interaction_explanation", "")
     new_med = state.get("new_medicine", "")
-    
+
     if chunks:
         draft = (
-            f"Based on verified clinical guidelines for {new_med or 'your medication'}:\n"
+            f"Based on verified clinical guidelines for {new_med or 'your inquiry'}:\n"
             f"{chunks[0]}\n\n"
             f"Clinical Interaction Note: {explanation}"
         )
     else:
         draft = (
-            f"Regarding {new_med or 'your medication'}: {explanation} "
-            "Please follow the manufacturer's packaging instructions."
+            f"Regarding {new_med or 'your inquiry'}: {explanation} "
+            "Please consult the manufacturer product leaflet or your doctor."
         )
 
     result = {
@@ -150,44 +169,43 @@ def response_agent(state: DoseCheckState) -> dict:
     }
     return {**result, **log_step(state, "response_agent", result)}
 
+
 # --- 6. Safety Critic Agent ---
 def safety_critic(state: DoseCheckState) -> dict:
     chunks = state.get("retrieved_chunks", [])
-    severity = state.get("interaction_severity")
+    severity = state.get("interaction_severity", "unknown")
     red_flag = state.get("red_flag_triggered", False)
-    
+
+    # Compute inputs for confidence scoring formula
+    retrieval_relevance = 0.90 if chunks else 0.25
+    completeness = 0.85 if len(chunks) >= 2 else (0.70 if chunks else 0.30)
+    safety_critic_score = 0.90 if severity == "safe" else (0.65 if severity == "caution" else 0.20)
+
+    inputs = ConfidenceInputs(
+        retrieval_relevance=retrieval_relevance,
+        completeness=completeness,
+        safety_critic_score=safety_critic_score,
+    )
+    confidence = compute_confidence(inputs)
+    flags_list = [state.get("red_flag_reason")] if red_flag else []
+    risk = classify_risk(confidence, red_flags=flags_list, thresholds=RiskThresholds())
+
     grounded = len(chunks) > 0
-
-    if red_flag:
-        confidence = 0.99
-        risk_level = "CRITICAL"
-    elif severity == "dangerous":
-        confidence = 0.85
-        risk_level = "HIGH"
-    elif severity == "unknown" or not grounded:
-        confidence = 0.45
-        risk_level = "MODERATE_TO_HIGH"
-    elif severity == "caution":
-        confidence = 0.75
-        risk_level = "MODERATE"
-    else:
-        confidence = 0.88 if grounded else 0.50
-        risk_level = "LOW"
-
     result = {
         "grounded": grounded,
         "confidence_score": confidence,
-        "risk_level": risk_level
+        "risk_level": risk.value,
     }
     return {
-        **result, 
+        **result,
         **log_step(
-            state, 
-            "safety_critic", 
-            result, 
-            reason=f"grounded={grounded}, confidence={confidence}, risk={risk_level}"
+            state,
+            "safety_critic",
+            result,
+            reason=f"grounded={grounded}, confidence={confidence}, risk={risk.value}"
         )
     }
+
 
 # --- 7. Decision Router ---
 def router(state: DoseCheckState) -> dict:
@@ -196,16 +214,17 @@ def router(state: DoseCheckState) -> dict:
     confidence = state.get("confidence_score") or 0.0
     is_dangerous = state.get("interaction_severity") == "dangerous"
 
-    # Router Safety Invariants:
+    # Router Safety Decision Invariant:
     # 1. IF red flag detected -> ESCALATE
     # 2. ELSE IF high risk -> ESCALATE
     # 3. ELSE IF confidence < 0.70 -> ESCALATE
     # 4. ELSE -> ANSWER
     must_escalate = (
         is_red_flag
-        or risk_level in ["HIGH", "CRITICAL"]
+        or risk_level == "HIGH"
         or is_dangerous
         or confidence < 0.70
+        or not state.get("grounded", False)
     )
 
     if must_escalate:
@@ -213,8 +232,8 @@ def router(state: DoseCheckState) -> dict:
         if is_red_flag:
             final = (
                 "🚨 EMERGENCY ESCALATION: Potential medical emergency detected ("
-                + (state.get("red_flag_reason") or "Critical symptoms")
-                + "). Please seek immediate medical care (Call 911 / Emergency Services)."
+                + (state.get("red_flag_reason") or "Critical red-flag symptoms")
+                + "). Normal guidance is blocked. Please call 911 / emergency services immediately."
             )
         else:
             escalation_record = escalate_case(
@@ -237,8 +256,10 @@ def router(state: DoseCheckState) -> dict:
     result = {"route": route, "final_answer": final}
     return {**result, **log_step(state, "router", result, reason=f"route={route}")}
 
+
 def red_flag_check(state: DoseCheckState) -> str:
     return "escalate_early" if state.get("red_flag_triggered") else "continue"
+
 
 # --- Build the graph ---
 graph = StateGraph(DoseCheckState)
@@ -267,13 +288,14 @@ graph.add_edge("router", END)
 
 app = graph.compile()
 
+
 # --- End-to-end Verification Tests ---
 if __name__ == "__main__":
-    import sys
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
     print("==================================================")
     print("DoseCheck AI: Running Agent Workflow Integration Tests")
@@ -322,4 +344,4 @@ if __name__ == "__main__":
 
     print("\n==================================================")
     print("All integration tests finished successfully!")
-    print("==================================================")
+    print("==================================================")
