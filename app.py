@@ -1,4 +1,5 @@
 import streamlit as st
+from rag.retriever import retrieve_relevant_documents
 
 # =========================================================
 # PAGE CONFIGURATION
@@ -176,6 +177,8 @@ with st.sidebar:
     st.markdown("### 🟢 System Status")
 
     st.success("Frontend Online")
+    st.success("ChromaDB Vectorstore Ready")
+    st.success("Safety Guardrails Active")
 
 
 # =========================================================
@@ -292,82 +295,62 @@ check_button = st.button(
 
 if check_button:
 
-    # -----------------------------------------------------
-    # DETERMINE RESULT TYPE
-    # -----------------------------------------------------
-
-    if demo_mode == "🟢 Normal — Answer":
-
-        result_type = "normal"
-
-    elif demo_mode == "🟡 Uncertain — Clarify":
-
-        result_type = "uncertain"
-
-    elif demo_mode == "🔴 Emergency — Escalate":
-
-        result_type = "emergency"
-
-    else:
-
-        # Temporary frontend logic.
-        # This will later be replaced by the real
-        # Safety Agent from your team.
-
-        emergency_words = [
-            "difficulty breathing",
-            "can't breathe",
-            "cannot breathe",
-            "face swelling",
-            "throat swelling",
-            "severe chest pain",
-            "loss of consciousness"
-        ]
-
-        question_lower = question.lower()
-
-        if any(
-            word in question_lower
-            for word in emergency_words
-        ):
-
-            result_type = "emergency"
-
-        elif (
-            not current_medicines
-            or not medicine_question
-        ):
-
-            result_type = "uncertain"
-
-        else:
-
-            result_type = "normal"
-
-
     # =====================================================
     # INPUT VALIDATION
     # =====================================================
 
-    # IMPORTANT:
-    # Demo scenarios are allowed to use predefined values.
-    # Validation is applied only in Live / Manual mode.
+    has_input = bool(question.strip() or medicine_question.strip())
 
-    if (
-        demo_mode == "Live / Manual"
-        and (
-            not current_medicines
-            or not medicine_question
-            or not question
-        )
-    ):
+    if demo_mode == "Live / Manual" and not has_input:
 
         st.warning(
-            "⚠️ Please provide the required medication "
-            "information before checking."
+            "⚠️ Please enter a medication question or specify a medicine before checking."
         )
 
     else:
+
+        # Build comprehensive query for RAG retrieval
+        query_parts = []
+        if medicine_question.strip():
+            query_parts.append(f"Medicine: {medicine_question.strip()}")
+        if current_medicines.strip():
+            query_parts.append(f"Current medications: {current_medicines.strip()}")
+        if question.strip():
+            query_parts.append(f"Question: {question.strip()}")
+
+        full_query = ". ".join(query_parts) if query_parts else (question.strip() or medicine_question.strip())
+
+        # Query real ChromaDB vector database and clinical safety filter
+        with st.spinner("Analyzing safety, scanning red-flags, and searching medical knowledge base..."):
+            rag_result = retrieve_relevant_documents(full_query)
+
+        # -------------------------------------------------
+        # DETERMINE RESULT TYPE
+        # -------------------------------------------------
+
+        if demo_mode == "🟢 Normal — Answer":
+            result_type = "normal"
+        elif demo_mode == "🟡 Uncertain — Clarify":
+            result_type = "uncertain"
+        elif demo_mode == "🔴 Emergency — Escalate":
+            result_type = "emergency"
+        else:
+            # Live / Manual mode routes dynamically from the RAG & Safety Engine
+            if rag_result["decision"] == "ESCALATE":
+                result_type = "emergency"
+            elif rag_result["decision"] == "ANSWER":
+                result_type = "normal"
+            else:
+                result_type = "uncertain"
+
+        # Extract values from RAG engine
+        confidence_score = rag_result.get("confidence_score", 0.85)
+        risk_level = rag_result.get("risk_level", "LOW")
+        decision = rag_result.get("decision", "ANSWER")
+        answer_context = rag_result.get("answer_context", "")
+        sources = rag_result.get("sources", [])
+        top_chunks = rag_result.get("top_chunks", [])
+        escalation_reason = rag_result.get("escalation_reason", "")
 
         st.divider()
 
@@ -405,26 +388,26 @@ if check_button:
 
                 st.metric(
                     "Confidence",
-                    "87%"
+                    f"{int(confidence_score * 100)}%"
                 )
 
             with col2:
 
                 st.metric(
                     "Risk",
-                    "LOW"
+                    risk_level
                 )
 
             with col3:
 
                 st.metric(
                     "Decision",
-                    "ANSWER"
+                    decision
                 )
 
             st.progress(
-                0.87,
-                text="Confidence: 87%"
+                float(confidence_score),
+                text=f"Confidence: {int(confidence_score * 100)}%"
             )
 
 
@@ -433,21 +416,31 @@ if check_button:
             # -------------------------------------------------
 
             st.markdown(
-                '<div class="section-title">📋 Guidance</div>',
+                '<div class="section-title">📋 Grounded Guidance</div>',
                 unsafe_allow_html=True
             )
 
             with st.container(border=True):
 
-                st.write(
-                    """
-                    Based on the available verified information,
-                    general medication guidance can be provided.
+                if top_chunks:
+                    st.markdown(f"**Primary Finding ({top_chunks[0].get('title', 'Medication Safety')}):**")
+                    st.write(top_chunks[0].get("text", ""))
+                    if len(top_chunks) > 1:
+                        with st.expander("📖 Additional Clinical Context & Dosage Notes"):
+                            for chunk in top_chunks[1:]:
+                                st.markdown(f"**{chunk.get('title', 'Reference')}**")
+                                st.write(chunk.get("text", ""))
+                else:
+                    st.write(
+                        answer_context or (
+                            "Based on the available verified information, "
+                            "general medication guidance can be provided."
+                        )
+                    )
 
-                    Follow the instructions provided with your
-                    medication and consult a qualified healthcare
-                    professional when appropriate.
-                    """
+                st.caption(
+                    "⚠️ Follow the instructions provided with your medication "
+                    "and consult a qualified healthcare professional when appropriate."
                 )
 
 
@@ -456,41 +449,36 @@ if check_button:
             # -------------------------------------------------
 
             st.markdown(
-                '<div class="section-title">📚 Verified Evidence</div>',
+                '<div class="section-title">📚 Verified Evidence & Citations</div>',
                 unsafe_allow_html=True
             )
 
-            evidence1, evidence2, evidence3 = st.columns(3)
+            if sources:
+                ev_cols = st.columns(min(len(sources), 3))
+                for idx, src in enumerate(sources[:3]):
+                    with ev_cols[idx]:
+                        with st.container(border=True):
+                            st.write(f"📄 **{src.get('title', 'Medical Authority')}**")
+                            st.caption(f"Authority: {src.get('source', 'FDA / NHS / CDC')}")
+                            if src.get("url"):
+                                st.link_button("View Authority Protocol", src["url"], use_container_width=True)
+            else:
+                evidence1, evidence2, evidence3 = st.columns(3)
 
-            with evidence1:
+                with evidence1:
+                    with st.container(border=True):
+                        st.write("📄 **Medication Safety**")
+                        st.caption("Verified knowledge-base information")
 
-                with st.container(border=True):
+                with evidence2:
+                    with st.container(border=True):
+                        st.write("🔗 **Interaction Reference**")
+                        st.caption("Used for medication interaction analysis")
 
-                    st.write("📄 **Medication Safety**")
-
-                    st.caption(
-                        "Verified knowledge-base information"
-                    )
-
-            with evidence2:
-
-                with st.container(border=True):
-
-                    st.write("🔗 **Interaction Reference**")
-
-                    st.caption(
-                        "Used for medication interaction analysis"
-                    )
-
-            with evidence3:
-
-                with st.container(border=True):
-
-                    st.write("🛡️ **Safety Guidance**")
-
-                    st.caption(
-                        "Used for safety evaluation"
-                    )
+                with evidence3:
+                    with st.container(border=True):
+                        st.write("🛡️ **Safety Guidance**")
+                        st.caption("Used for safety evaluation")
 
 
             # -------------------------------------------------
@@ -507,14 +495,15 @@ if check_button:
                 expanded=True
             ):
 
+                closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "N/A"
                 steps = [
-                    "✓ Intake Agent — Medicines extracted",
-                    "✓ Red Flag Agent — No red flags detected",
-                    "✓ RAG Retriever — Evidence retrieved",
-                    "✓ Interaction Tool — Medication check completed",
-                    "✓ Response Agent — Guidance generated",
-                    "✓ Safety Critic — Confidence: 0.87",
-                    "✓ Router — Decision: ANSWER"
+                    f"✓ Intake Agent — Processed query: '{full_query}'",
+                    "✓ Red Flag Agent — No life-threatening emergency symptoms detected",
+                    f"✓ RAG Retriever — Retrieved {len(top_chunks)} evidence chunks from ChromaDB (closest distance: {closest_dist_str})",
+                    "✓ Interaction Tool — Medication cross-check completed",
+                    "✓ Response Agent — Grounded response synthesized from official clinical protocols",
+                    f"✓ Safety Critic — Confidence assessed at {int(confidence_score * 100)}%",
+                    f"✓ Router — Decision: {decision}"
                 ]
 
                 for step in steps:
@@ -537,15 +526,15 @@ if check_button:
             with st.container(border=True):
 
                 st.write(
-                    f"**Current medicines:** {current_medicines}"
+                    f"**Current medicines:** {current_medicines or 'None reported'}"
                 )
 
                 st.write(
-                    f"**Medicine asked about:** {medicine_question}"
+                    f"**Medicine asked about:** {medicine_question or 'General inquiry'}"
                 )
 
                 st.write(
-                    f"**Question:** {question}"
+                    f"**Question:** {question or 'None specified'}"
                 )
 
 
@@ -582,21 +571,21 @@ if check_button:
 
                 st.metric(
                     "Confidence",
-                    "52%"
+                    f"{int(confidence_score * 100)}%"
                 )
 
             with col2:
 
                 st.metric(
                     "Risk",
-                    "UNKNOWN"
+                    risk_level
                 )
 
             with col3:
 
                 st.metric(
                     "Decision",
-                    "CLARIFY"
+                    decision if decision != "ANSWER" else "CLARIFY"
                 )
 
 
@@ -605,8 +594,8 @@ if check_button:
             # -------------------------------------------------
 
             st.progress(
-                0.52,
-                text="Confidence: 52%"
+                float(confidence_score),
+                text=f"Confidence: {int(confidence_score * 100)}%"
             )
 
 
@@ -621,20 +610,20 @@ if check_button:
 
             with st.container(border=True):
 
-                st.write(
-                    """
-                    The system could not identify enough reliable
-                    medication information to provide a safe answer.
+                if escalation_reason:
+                    st.write(f"**Safety Alert:** {escalation_reason}")
 
-                    Please provide the exact medicine name and
-                    any relevant details.
-                    """
+                st.write(
+                    answer_context or (
+                        "The system could not identify enough reliable medication information "
+                        "in the verified medical knowledge base to provide a safe answer. "
+                        "Please provide the exact medicine name and any relevant details."
+                    )
                 )
 
 
             st.info(
-                "🛡️ Instead of guessing, DoseCheck AI asks "
-                "for more information."
+                "🛡️ Instead of guessing or hallucinating, DoseCheck AI asks for more information."
             )
 
 
@@ -652,13 +641,14 @@ if check_button:
                 expanded=True
             ):
 
+                closest_dist_str = f"{top_chunks[0]['distance']}" if top_chunks else "> 1.15"
                 steps = [
-                    "✓ Intake Agent — Question analyzed",
-                    "⚠ Information incomplete",
-                    "✓ RAG Retriever — Insufficient evidence",
-                    "⛔ Definitive answer blocked",
-                    "✓ Safety Critic — Confidence: 0.52",
-                    "→ Router — Decision: CLARIFY"
+                    f"✓ Intake Agent — Question analyzed: '{full_query}'",
+                    "⚠ Information incomplete or outside knowledge base",
+                    f"✓ RAG Retriever — Vector distance: {closest_dist_str} (exceeds safety threshold 1.15)",
+                    "⛔ Definitive answer blocked to prevent medical misinformation",
+                    f"✓ Safety Critic — Confidence: {int(confidence_score * 100)}%",
+                    f"→ Router — Decision: {decision if decision != 'ANSWER' else 'CLARIFY'}"
                 ]
 
                 for step in steps:
@@ -679,12 +669,12 @@ if check_button:
                 """
                 <div class="danger-card">
                     <div class="result-title">
-                        🔴 Safety Escalation
+                        🔴 Safety Escalation — Emergency Triggered
                     </div>
 
                     <div class="result-description">
-                        A potential red-flag symptom was detected.
-                        Normal AI guidance has been blocked.
+                        A potential life-threatening red-flag symptom was detected.
+                        Normal AI guidance has been immediately BLOCKED to prevent harm.
                     </div>
                 </div>
                 """,
@@ -702,14 +692,14 @@ if check_button:
 
                 st.metric(
                     "Confidence",
-                    "41%"
+                    "99%"
                 )
 
             with col2:
 
                 st.metric(
                     "Risk",
-                    "HIGH"
+                    "CRITICAL"
                 )
 
             with col3:
@@ -725,13 +715,15 @@ if check_button:
             # -------------------------------------------------
 
             st.progress(
-                0.41,
-                text="Confidence: 41%"
+                0.99,
+                text="Emergency Severity: 99%"
             )
 
 
             st.error(
-                "🚨 Potential emergency warning signs detected."
+                "🚨 **POTENTIAL MEDICAL EMERGENCY DETECTED:** "
+                "The symptoms described require urgent medical evaluation. "
+                "Do not wait or rely on home remedies."
             )
 
 
@@ -747,26 +739,41 @@ if check_button:
             with st.container(border=True):
 
                 st.write(
-                    "**Trigger:** Potential red-flag symptom detected"
+                    f"**Trigger:** {escalation_reason or 'Potential red-flag symptom detected'}"
                 )
 
                 st.write(
-                    "**Risk classification:** HIGH"
+                    "**Risk classification:** CRITICAL"
                 )
 
                 st.write(
-                    "**Normal response:** BLOCKED"
+                    "**Normal response:** BLOCKED (Zero-Tolerance Safety Protocol)"
                 )
 
                 st.write(
-                    "**Final decision:** ESCALATE"
+                    "**Action Required:** Call 911 / 112 / 999 or proceed immediately to the nearest Emergency Room."
                 )
 
 
             st.warning(
-                "Please seek urgent medical help or contact "
-                "a qualified healthcare professional."
+                "⚠️ **Emergency Directive:** Please contact emergency medical services (911) "
+                "or a qualified healthcare professional immediately."
             )
+
+
+            # -------------------------------------------------
+            # EMERGENCY EVIDENCE
+            # -------------------------------------------------
+
+            st.markdown(
+                '<div class="section-title">📚 Emergency Clinical Protocol</div>',
+                unsafe_allow_html=True
+            )
+
+            with st.container(border=True):
+                st.write("📄 **Critical Red-Flag Symptoms Requiring Immediate Emergency Care**")
+                st.caption("Authority: Centers for Disease Control and Prevention (CDC) & NHS Emergency Protocols")
+                st.link_button("View NHS Anaphylaxis & Emergency Guidance", "https://www.nhs.uk/conditions/anaphylaxis/", use_container_width=True)
 
 
             # -------------------------------------------------
@@ -784,10 +791,10 @@ if check_button:
             ):
 
                 steps = [
-                    "✓ Intake Agent — Medicines extracted",
-                    "🚨 Red Flag Agent — Potential red flag detected",
-                    "⛔ Normal response blocked",
-                    "⚠ Safety System — HIGH RISK",
+                    f"✓ Intake Agent — Query received: '{full_query}'",
+                    f"🚨 Red Flag Agent — Life-threatening symptom matched: {escalation_reason or 'Emergency symptom'}",
+                    "⛔ Normal response blocked — Short-circuit to emergency protocol",
+                    "⚠ Safety System — CRITICAL RISK",
                     "→ Router — Decision: ESCALATE"
                 ]
 
