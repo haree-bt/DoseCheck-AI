@@ -1,5 +1,6 @@
 from langgraph.graph import StateGraph, END
 from state import DoseCheckState
+from rag.retriever import retrieve_relevant_documents
 
 def log_step(state: DoseCheckState, node_name: str, output: dict, reason: str = "") -> dict:
     """Call this at the end of every node — this IS your observability requirement."""
@@ -17,8 +18,18 @@ def red_flag_agent(state: DoseCheckState) -> dict:
     return {**result, **log_step(state, "red_flag_agent", result)}
 
 def retrieval_agent(state: DoseCheckState) -> dict:
-    result = {"retrieved_chunks": ["stub chunk about paracetamol"], "retrieved_sources": ["stub_source"]}
-    return {**result, **log_step(state, "retrieval_agent", result)}
+    rag_output = retrieve_relevant_documents(state.get("user_question", ""))
+    chunks = [c["text"] for c in rag_output.get("top_chunks", [])]
+    sources = [s["title"] for s in rag_output.get("sources", [])]
+    
+    result = {
+        "retrieved_chunks": chunks,
+        "retrieved_sources": sources
+    }
+    return {
+        **result, 
+        **log_step(state, "retrieval_agent", result, reason=f"decision={rag_output['decision']}, confidence={rag_output['confidence_score']}")
+    }
 
 def interaction_tool_node(state: DoseCheckState) -> dict:
     result = {"interaction_severity": "safe", "interaction_explanation": "stub: no known interaction"}
