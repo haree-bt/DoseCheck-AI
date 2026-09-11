@@ -1,0 +1,35 @@
+﻿---
+title: Critical Red-Flag Symptoms Requiring Immediate Emergency Care
+source: Centers for Disease Control and Prevention (CDC) & NHS Emergency Protocols
+url: https://www.nhs.uk/conditions/anaphylaxis/
+category: red_flags
+---
+
+LIFE-THREATENING RED FLAG PROTOCOL:
+When an individual experiences severe adverse medication reactions or sudden acute symptoms, an AI assistant or non-clinician must NEVER provide home remedy advice, delay medical care, or offer speculative reassurance. The user must immediately be directed to call emergency services (911 in the US, 999 in the UK, 112 in the EU/India) or go to the nearest emergency department.
+
+RED FLAG SYMPTOM CLUSTERS:
+
+1. ANAPHYLAXIS & ACUTE ALLERGIC REACTION:
+- Swelling of the throat, tongue, lips, mouth, or vocal cords.
+- Difficulty breathing, shortness of breath, wheezing, or stridor.
+- Sudden widespread hives, intense itching, flushing, or blue/pale skin/lips.
+- Feeling faint, severe dizziness, lightheadedness, or sudden loss of consciousness.
+
+2. CARDIOVASCULAR & RESPIRATORY CRISIS:
+- Crushing chest pain, pressure, heaviness, or tightness spreading to the arm, jaw, neck, or back.
+- Severe shortness of breath at rest or rapid, irregular heartbeat (palpitations) accompanied by fainting.
+
+3. SEVERE GASTROINTESTINAL & INTERNAL BLEEDING:
+- Vomiting blood or material that looks like dark coffee grounds.
+- Black, tarry stools or bright red blood in bowel movements.
+- Sudden, unbearable abdominal pain.
+
+4. NEUROLOGICAL EMERGENCIES:
+- Sudden numbness or weakness of the face, arm, or leg (especially on one side of the body).
+- Sudden confusion, difficulty speaking or understanding speech.
+- Sudden severe headache ("thunderclap headache") unlike any headache experienced before.
+- Seizures or convulsions following medication ingestion.
+
+ESCALATION DIRECTIVE:
+If any of the above symptoms are mentioned, the system must trigger an immediate HIGH-RISK ESCALATION flag.

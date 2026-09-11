@@ -1,0 +1,26 @@
+﻿---
+title: Acetaminophen Safety, Dosage Limits, and Toxicity Warnings
+source: US Food and Drug Administration (FDA) & NIH MedlinePlus
+url: https://www.fda.gov/drugs/safe-daily-intake-acetaminophen
+category: medication_safety
+---
+
+OVERVIEW:
+Acetaminophen (commonly known as Tylenol or Paracetamol) is an active ingredient in hundreds of over-the-counter (OTC) and prescription medicines used to relieve pain and reduce fever.
+
+MAXIMUM DAILY DOSAGE LIMITS:
+- For healthy adults and teenagers 12 years and older, the absolute maximum daily limit of acetaminophen is 4,000 milligrams (mg) in a 24-hour period.
+- Many healthcare providers and manufacturers recommend an even lower daily limit of 3,000 mg per day to provide an extra safety buffer against unintentional overdose.
+- Exceeding the maximum recommended daily dose can lead to severe, irreversible liver injury, liver failure, and death.
+
+COMBINATION MEDICINE HAZARD:
+- Acetaminophen is often combined with other active ingredients in multi-symptom cold, cough, flu, headache, allergy, and sleep-aid medicines (e.g., NyQuil, DayQuil, Excedrin, Percocet, Vicodin).
+- Taking more than one medication containing acetaminophen at the same time is the leading cause of accidental acetaminophen overdose.
+- Always check the "Drug Facts" label for the word "acetaminophen" or abbreviations such as "APAP". Never take two products containing acetaminophen simultaneously.
+
+ALCOHOL WARNING:
+- Patients who consume three or more alcoholic beverages every day must consult a doctor before using acetaminophen, as chronic alcohol use significantly multiplies the risk of severe liver toxicity.
+
+SIGNS OF ACETAMINOPHEN OVERDOSE:
+- Early symptoms may include nausea, vomiting, loss of appetite, sweating, extreme fatigue, and abdominal pain (especially in the upper right quadrant).
+- In cases of suspected overdose, immediate medical intervention is critical even if initial symptoms appear mild.

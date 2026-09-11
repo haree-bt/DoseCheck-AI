@@ -1,0 +1,19 @@
+﻿---
+title: General Medical Principles for Missed Medication Doses
+source: NHS (UK) & NIH MedlinePlus
+url: https://medlineplus.gov/druginformation.html
+category: dosage
+---
+
+GENERAL MISSED DOSE RULE:
+- If you miss a dose of your scheduled medication, take it as soon as you remember.
+- However, if it is almost time for your next scheduled dose, skip the missed dose completely and continue with your regular dosing schedule.
+- NEVER take a double dose, two pills at once, or an extra dose to make up for a missed dose. Doing so can cause sudden drug toxicity or dangerous drops in blood pressure/blood sugar depending on the drug.
+
+MEDICATION-SPECIFIC TIMING SENSITIVITY:
+1. Antibiotics: Take the missed dose as soon as remembered to maintain consistent drug concentration in the bloodstream. If it is close to the next dose, adjust the interval or skip rather than doubling.
+2. Blood Pressure Medications: Do not take two doses at once to avoid severe hypotension (life-threatening low blood pressure).
+3. Blood Thinners (Anticoagulants): Strict adherence is critical; patients should follow specific instructions provided by their cardiologist or hematologist and never double up.
+
+ACCIDENTAL DOUBLE-DOSE ACTION:
+- If you accidentally take a double dose or take your medication twice by mistake, do not wait for symptoms to appear. Immediately contact Poison Control (1-800-222-1222 in the US) or emergency services for advice.

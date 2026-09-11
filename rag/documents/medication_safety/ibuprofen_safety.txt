@@ -1,0 +1,24 @@
+﻿---
+title: Ibuprofen Safety, NSAID Risks, and Drug Interaction Warnings
+source: US Food and Drug Administration (FDA) & NIH MedlinePlus
+url: https://medlineplus.gov/druginfo/meds/a682159.html
+category: medication_safety
+---
+
+OVERVIEW:
+Ibuprofen (commonly known by brand names Advil or Motrin) is a nonsteroidal anti-inflammatory drug (NSAID) used to reduce fever and treat pain or inflammation from conditions such as headaches, toothaches, arthritis, or minor injuries.
+
+DOSAGE AND ADMINISTRATION:
+- Typical adult OTC dose: 200 mg to 400 mg every 4 to 6 hours as needed.
+- The maximum OTC daily limit for adults is 1,200 mg in 24 hours unless directly prescribed a higher dose (up to 3,200 mg daily under close physician supervision).
+- Take with food or milk to minimize stomach upset and gastric irritation.
+
+SERIOUS WARNINGS AND RISKS:
+1. GASTROINTESTINAL BLEEDING: NSAIDs, including ibuprofen, increase the risk of serious gastrointestinal adverse events, including inflammation, bleeding, ulceration, and perforation of the stomach or intestines, which can be fatal.
+2. CARDIOVASCULAR RISK: NSAIDs may cause an increased risk of serious cardiovascular thrombotic events, myocardial infarction (heart attack), and stroke. Risk may increase with duration of use and in patients with existing cardiovascular disease.
+3. RENAL (KIDNEY) IMPAIRMENT: Long-term NSAID administration can result in renal papillary necrosis and other renal injury. Patients with impaired renal function, heart failure, or liver dysfunction are at highest risk.
+
+INTERACTIONS TO AVOID:
+- Other NSAIDs: Never combine ibuprofen with aspirin, naproxen (Aleve), or celecoxib without physician approval due to compounded bleeding risk.
+- Blood Thinners / Anticoagulants: Combining ibuprofen with warfarin, apixaban, or rivaroxaban dramatically increases hemorrhage risk.
+- Alcohol: Chronic alcohol consumption while taking ibuprofen substantially raises the chance of stomach bleeding.

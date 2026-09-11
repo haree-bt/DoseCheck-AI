@@ -1,0 +1,21 @@
+# Python Virtual Environment
+venv/
+.venv/
+env/
+
+# Python temporary cache files
+__pycache__/
+*.pyc
+
+# Local ChromaDB Vector Database (do not upload large binary DBs)
+rag/vectorstore/
+
+# Environment variables & API keys
+.env
+
+# VS Code settings
+.vscode/
+
+# Windows system files
+desktop.ini
+Thumbs.db
