@@ -1,7 +1,7 @@
+from safety_guardrail import detect_red_flags, ConfidenceInputs, compute_confidence, classify_risk, RiskThresholds
 from langgraph.graph import StateGraph, END
 from state import DoseCheckState
-from rag.retriever import retrieve_relevant_documents
-
+from fastmcp import Client
 def log_step(state: DoseCheckState, node_name: str, output: dict, reason: str = "") -> dict:
     """Call this at the end of every node — this IS your observability requirement."""
     entry = {"node": node_name, "output": output, "reason": reason}
@@ -14,45 +14,76 @@ def intake_agent(state: DoseCheckState) -> dict:
     return {**result, **log_step(state, "intake_agent", result)}
 
 def red_flag_agent(state: DoseCheckState) -> dict:
-    result = {"red_flag_triggered": False, "red_flag_reason": None}
+    text_to_check = state["user_question"] + " " + " ".join(state.get("extracted_symptoms", []))
+    red_flags = detect_red_flags(text_to_check)
+    triggered = len(red_flags) > 0
+    reason = f"Detected: {', '.join(red_flags)}" if triggered else None
+    result = {"red_flag_triggered": triggered, "red_flag_reason": reason}
     return {**result, **log_step(state, "red_flag_agent", result)}
 
 def retrieval_agent(state: DoseCheckState) -> dict:
-    rag_output = retrieve_relevant_documents(state.get("user_question", ""))
-    chunks = [c["text"] for c in rag_output.get("top_chunks", [])]
-    sources = [s["title"] for s in rag_output.get("sources", [])]
-    
-    result = {
-        "retrieved_chunks": chunks,
-        "retrieved_sources": sources
-    }
-    return {
-        **result, 
-        **log_step(state, "retrieval_agent", result, reason=f"decision={rag_output['decision']}, confidence={rag_output['confidence_score']}")
-    }
+    result = {"retrieved_chunks": ["stub chunk about paracetamol"], "retrieved_sources": ["stub_source"]}
+    return {**result, **log_step(state, "retrieval_agent", result)}
 
-def interaction_tool_node(state: DoseCheckState) -> dict:
-    result = {"interaction_severity": "safe", "interaction_explanation": "stub: no known interaction"}
+RISK_TO_SEVERITY = {
+    "low": "safe",
+    "moderate": "caution",
+    "high": "dangerous",
+    "unknown": "unknown",
+}
+
+async def interaction_tool_node(state: DoseCheckState) -> dict:
+    from pathlib import Path
+    async with Client(Path("server.py")) as client:
+        tool_result = await client.call_tool(
+            "medication_interaction_check",
+            {"drug_a": state["current_medicines"][0], "drug_b": state["new_medicine"]}
+        )
+        severity = RISK_TO_SEVERITY.get(tool_result.data.get("risk", "unknown"), "unknown")
+    result = {
+        "interaction_severity": severity,
+        "interaction_explanation": tool_result.data.get("message", ""),
+    }
     return {**result, **log_step(state, "interaction_tool", result)}
 
 def response_agent(state: DoseCheckState) -> dict:
-    result = {"draft_answer": "Based on available info, this combination looks safe.",
-              "cited_chunks": state.get("retrieved_chunks", [])}
+    severity = state.get("interaction_severity", "unknown")
+    explanation = state.get("interaction_explanation", "")
+    if severity == "safe":
+        draft = "Based on available info, this combination looks safe."
+    else:
+        draft = f"Caution: {explanation}"
+    result = {"draft_answer": draft, "cited_chunks": state.get("retrieved_chunks", [])}
     return {**result, **log_step(state, "response_agent", result)}
 
 def safety_critic(state: DoseCheckState) -> dict:
+    retrieval_relevance = 0.9 if state.get("retrieved_chunks") else 0.3
+    completeness = 1.0 if state.get("cited_chunks") else 0.4
+    safety_critic_score = 0.9 if state.get("grounded_hint", True) else 0.4  # placeholder until a real critic model exists
+
+    inputs = ConfidenceInputs(
+        retrieval_relevance=retrieval_relevance,
+        completeness=completeness,
+        safety_critic_score=safety_critic_score,
+    )
+    confidence = compute_confidence(inputs)
+    risk = classify_risk(confidence, red_flags=[], thresholds=RiskThresholds())
+
     grounded = len(state.get("cited_chunks", [])) > 0
-    confidence = 0.8 if grounded else 0.3
-    result = {"grounded": grounded, "confidence_score": confidence, "risk_level": "low"}
+    result = {
+        "grounded": grounded,
+        "confidence_score": confidence,
+        "risk_level": risk.value,
+    }
     return {**result, **log_step(state, "safety_critic", result,
-                                  reason=f"grounded={grounded}, confidence={confidence}")}
+                                  reason=f"grounded={grounded}, confidence={confidence}, risk={risk.value}")}
 
 def router(state: DoseCheckState) -> dict:
     escalate = (
         state.get("red_flag_triggered", False)
         or not state.get("grounded", False)
-        or (state.get("confidence_score") or 0) < 0.7
-        or state.get("interaction_severity") == "dangerous"
+        or state.get("risk_level") == "HIGH"
+        or state.get("interaction_severity") in ("caution", "dangerous")
     )
     route = "escalate" if escalate else "safe_answer"
     final = (
@@ -97,34 +128,35 @@ app = graph.compile()
 # --- Test run (so you can see it actually working) ---
 
 if __name__ == "__main__":
-    initial_state = {
-        "current_medicines": ["metformin"],
-        "new_medicine": "paracetamol",
-        "user_question": "Can I take paracetamol with metformin?",
-        "extracted_intent": None,
-        "extracted_symptoms": [],
-        "red_flag_triggered": True,
-        "red_flag_reason": "chest pain and difficulty breathing reported",
-        "red_flag_reason": None,
-        "retrieved_chunks": [],
-        "retrieved_sources": [],
-        "interaction_severity": None,
-        "interaction_explanation": None,
-        "draft_answer": None,
-        "cited_chunks": [],
-        "confidence_score": None,
-        "grounded": None,
-        "risk_level": None,
-        "route": None,
-        "final_answer": None,
-        "trace_log": [],
-    }
+    import asyncio
 
-    result = app.invoke(initial_state)
+    async def main():
+        initial_state = {
+            "current_medicines": ["amlodipine"],
+            "new_medicine": "ibuprofen",
+            "user_question": "Can I take ibuprofen with my amlodipine?",
+            "extracted_intent": None,
+            "extracted_symptoms": [],
+            "red_flag_triggered": False,
+            "red_flag_reason": None,
+            "retrieved_chunks": [],
+            "retrieved_sources": [],
+            "interaction_severity": None,
+            "interaction_explanation": None,
+            "draft_answer": None,
+            "cited_chunks": [],
+            "confidence_score": None,
+            "grounded": None,
+            "risk_level": None,
+            "route": None,
+            "final_answer": None,
+            "trace_log": [],
+        }
+        result = await app.ainvoke(initial_state)
+        print("\n=== FINAL ANSWER ===")
+        print(result["final_answer"])
+        print("\n=== TRACE LOG ===")
+        for step in result["trace_log"]:
+            print(step)
 
-    print("\n=== FINAL ANSWER ===")
-    print(result["final_answer"])
-
-    print("\n=== TRACE LOG ===")
-    for step in result["trace_log"]:
-        print(step)
+    asyncio.run(main())
