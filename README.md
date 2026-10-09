@@ -1,4 +1,4 @@
-﻿# DoseCheck-AI 💊🛡️
+# DoseCheck-AI 💊🛡️
 > **Safety-First Multi-Agent AI System for Medication Guidance**  
 > Powered by Grounded Medical RAG, Tool Verification, Confidence Scoring, and Risk-Based Escalation.
 
@@ -122,22 +122,33 @@ result = retrieve_relevant_documents("What is the maximum daily dose of acetamin
 DoseCheck-AI/
 │
 ├── README.md                 # Project documentation and architecture guide
-├── requirements.txt          # Minimal, reliable dependencies (chromadb)
+├── requirements.txt          # Core dependencies (chromadb, langgraph, streamlit, fastmcp)
 ├── .gitignore                # Protects venv/ and vectorstore/ from git tracking
 │
-├── rag/                      # RAG Engine (Member 2 Responsibility)
-│   ├── __init__.py           # Package marker
-│   ├── ingest.py             # Document loading, chunking, and ChromaDB indexing
-│   ├── retriever.py          # Similarity search, confidence scoring & safety router
-│   ├── documents/            # Authoritative medical knowledge base
-│   │   ├── dosage/           # Missed dose guidance (NHS & NIH)
-│   │   ├── medication_safety/# Acetaminophen & Ibuprofen safety guidelines (FDA & NIH)
-│   │   └── red_flags/        # Emergency anaphylaxis / critical symptoms (CDC & NHS)
-│   └── vectorstore/          # Local ChromaDB persistent storage (auto-generated)
+├── app.py                    # Streamlit web application & clinical dashboard (Member 4)
+├── graph.py                  # LangGraph multi-agent orchestration workflow (Member 1)
+├── state.py                  # Agent state schema with trace logs and metadata (Member 1)
+├── safety_guardrail.py       # Red-flag detector, toxic dose & population guardrails (Member 4)
 │
-└── evaluation/               # Evaluation & Safety Verification
-    ├── test_cases.json       # 5 Gold test cases covering all 3 safety scenarios
-    └── evaluate.py           # Automated evaluation runner (100% test accuracy)
+├── medication_tool.py        # Clinical drug catalog, brand aliases & entity lookup (Member 3)
+├── interaction_tool.py       # Drug interaction engine & class-level risk rules (Member 3)
+├── escalation_tool.py        # Clinician review & audit case generation (Member 3)
+├── server.py                 # FastMCP server exposing tools via MCP protocol (Member 3)
+│
+├── rag/                      # Grounded RAG Engine (Member 2)
+│   ├── __init__.py           # Package marker
+│   ├── ingest.py             # Word-aligned chunker and ChromaDB indexer
+│   ├── retriever.py          # Similarity search, confidence scoring & safety router
+│   ├── documents/            # Authoritative medical knowledge base (FDA, NHS, CDC, AAP)
+│   │   ├── dosage/           # Missed dose guidance
+│   │   ├── medication_safety/# Acetaminophen, Ibuprofen, Anticoagulants, Cardiovascular, Pediatrics, Pregnancy
+│   │   └── red_flags/        # Emergency anaphylaxis, stroke & hemorrhage protocols
+│   └── vectorstore/          # Local persistent ChromaDB storage (auto-generated)
+│
+└── evaluation/               # Verification & Automated Testing Suite
+    ├── test_cases.json       # Gold RAG grounding & rejection benchmark cases
+    ├── agent_test_cases.json # Multi-agent workflow test cases (overdose, pediatrics, pregnancy, interactions)
+    └── evaluate.py           # Comprehensive automated evaluation runner (100% test accuracy)
 ```
 
 ---
@@ -150,7 +161,7 @@ DoseCheck-AI/
 
 ### 1. Clone the Repository
 ```powershell
-git clone <REPO_URL> .
+git clone https://github.com/haree-bt/DoseCheck-AI.git .
 ```
 
 ### 2. Set Up Virtual Environment
@@ -173,27 +184,39 @@ pip install -r requirements.txt
 python rag/ingest.py
 ```
 
-### Step 2: Test Retrieval & Confidence Scoring
-```powershell
-python rag/retriever.py
-```
-
-### Step 3: Run the Automated Evaluation Suite
+### Step 2: Run the Automated Evaluation Suite
 ```powershell
 python evaluation/evaluate.py
+```
+
+### Step 3: Launch the Clinical Streamlit Web App
+```powershell
+streamlit run app.py
 ```
 
 ---
 
 ## 9. Evaluation Results
-The system is evaluated against 5 gold test cases covering:
+The system is evaluated against **13 automated test cases** across two verification batteries:
+
+### Part 1: RAG Grounding & Rejection (5 Cases)
 1. **Dosage Limits**: `PASS` (Answered with FDA citations)
 2. **Missed Doses**: `PASS` (Answered with NHS double-dose warnings)
 3. **Drug Interactions**: `PASS` (Answered with NSAID / blood thinner warning)
 4. **Out-of-Domain**: `PASS` (Safely blocked fabrication, flagged for clinician review)
 5. **Emergency Red Flag**: `PASS` (Critical risk detected, escalated to 911)
 
-**Result**: 5/5 Passed (100.0% Accuracy).
+### Part 2: Multi-Agent Safety Workflow (8 Cases)
+1. **Grounded Safe Guidance**: `PASS` (Paracetamol adult dosage answered safely)
+2. **Missed Dose Protocol**: `PASS` (Never double up missed pills)
+3. **Acute Overdose / Toxic Ingestion**: `PASS` (10,000 mg paracetamol triggers emergency override)
+4. **Pediatric Contraindication**: `PASS` (Adult guidelines blocked for 2-year-old child; pediatrician referral)
+5. **Pregnancy Black-Box Warnings**: `PASS` (Third-trimester NSAID ductus arteriosus risk flagged)
+6. **Dangerous Drug Interaction**: `PASS` (Ibuprofen + Anticoagulant bleeding hazard detected and blocked)
+7. **Emergency Chest Pain**: `PASS` (Immediate 911 escalation)
+8. **Emergency Internal Bleeding**: `PASS` (GI hemorrhage red flag escalated to 911)
+
+**Overall Score**: **13/13 Passed (100.0% Accuracy)**.
 
 ---
 

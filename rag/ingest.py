@@ -1,4 +1,4 @@
-﻿"""
+"""
 rag/ingest.py
 Document Ingestion, Cleaning, Chunking, and Embedding into ChromaDB.
 """
@@ -47,29 +47,35 @@ def parse_metadata_and_body(file_path: Path):
 
 def chunk_text(text: str, chunk_size: int = 450, overlap: int = 80) -> list[str]:
     """
-    Splits text into overlapping chunks using paragraph and sentence boundaries.
-    
-    Why overlap?
-    Prevents critical medical facts from being split across chunk boundaries.
+    Splits text into overlapping chunks using paragraph and word boundaries.
+    Guarantees word integrity so words are never cut mid-token (e.g. 'impaired' -> 'mpaired').
     """
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks = []
     current_chunk = ""
 
     for paragraph in paragraphs:
-        if len(current_chunk) + len(paragraph) + 2 <= chunk_size:
+        if not current_chunk:
+            current_chunk = paragraph
+        elif len(current_chunk) + len(paragraph) + 2 <= chunk_size:
             current_chunk = f"{current_chunk}\n\n{paragraph}".strip()
         else:
-            if current_chunk:
-                chunks.append(current_chunk)
-                # Keep the last portion for overlap
-                overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
-                current_chunk = f"{overlap_text}\n\n{paragraph}".strip()
+            chunks.append(current_chunk)
+            # Find word-aligned overlap from the tail of current_chunk
+            if len(current_chunk) > overlap:
+                raw_overlap = current_chunk[-overlap:]
+                # Snap to next space boundary to avoid slicing words in half
+                first_space = raw_overlap.find(" ")
+                if first_space != -1 and first_space < len(raw_overlap) - 1:
+                    overlap_text = raw_overlap[first_space + 1:].strip()
+                else:
+                    overlap_text = raw_overlap.strip()
             else:
-                # In case a single paragraph is longer than chunk_size
-                chunks.append(paragraph)
+                overlap_text = current_chunk.strip()
 
-    if current_chunk:
+            current_chunk = f"{overlap_text}\n\n{paragraph}".strip()
+
+    if current_chunk and (not chunks or current_chunk != chunks[-1]):
         chunks.append(current_chunk)
 
     return chunks

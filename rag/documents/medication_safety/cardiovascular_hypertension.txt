@@ -1,0 +1,19 @@
+---
+title: Hypertension, Cardiovascular Medications, and NSAID Interaction Precautions
+source: UK National Health Service (NHS) & US FDA
+url: https://www.nhs.uk/conditions/high-blood-pressure-hypertension/
+category: medication_safety
+---
+
+OVERVIEW:
+Hypertension and cardiovascular therapies include calcium channel blockers (Amlodipine), ACE inhibitors (Lisinopril, Enalapril), angiotensin receptor blockers (Losartan), beta-blockers (Metoprolol), and statins (Atorvastatin, Simvastatin).
+
+CRITICAL DRUG INTERACTIONS:
+1. NSAIDs AND ANTIHYPERTENSIVE THERAPY:
+- Common NSAIDs such as ibuprofen and naproxen cause systemic renal vasoconstriction and sodium/water retention.
+- NSAIDs counteract and blunt the blood pressure-lowering effectiveness of amlodipine, lisinopril, and beta-blockers.
+- Taking NSAIDs alongside ACE inhibitors (lisinopril) substantially increases the risk of acute kidney injury (nephrotoxicity), particularly in elderly or dehydrated individuals.
+
+2. STATIN INTERACTIONS:
+- Amlodipine increases systemic exposure to Simvastatin. When taken concurrently with amlodipine, the daily dose of simvastatin should not exceed 20 mg daily to prevent statin-induced rhabdomyolysis and myopathy.
+- Paracetamol (acetaminophen) is generally safe to take with amlodipine and ACE inhibitors for mild to moderate pain relief.

@@ -1,0 +1,20 @@
+---
+title: Pregnancy and Lactation Medication Precautions and Black-Box Warnings
+source: US Food and Drug Administration (FDA) & UK NHS
+url: https://www.fda.gov/drugs/special-features/pregnancy-and-lactation-labeling
+category: medication_safety
+---
+
+OVERVIEW:
+During pregnancy and breastfeeding, medications cross the placental barrier and distribute into human breast milk, presenting significant teratogenic and fetal developmental hazards.
+
+SERIOUS WARNINGS AND CONTRAINDICATIONS:
+1. NSAIDs IN PREGNANCY (BLACK-BOX WARNING):
+- The FDA warns that taking NSAIDs (including ibuprofen, naproxen, and celecoxib) at or after 20 weeks of pregnancy can cause rare but serious kidney problems in unborn babies, leading to low levels of amniotic fluid (oligohydramnios) and potential complications.
+- Taking NSAIDs in the third trimester (at or after 30 weeks of pregnancy) is strictly contraindicated because it causes premature closure of the fetal ductus arteriosus, resulting in pulmonary hypertension and fetal distress.
+
+2. PREFERRED ANALGESICS:
+- Acetaminophen (paracetamol) is considered the first-choice pain reliever and antipyretic during pregnancy and breastfeeding, but it should still be used at the lowest effective dose for the shortest duration necessary, with physician or OB/GYN guidance.
+
+3. CLINICAL DIRECTIVE:
+- Pregnant or lactating individuals should never start, stop, or change medications without direct medical guidance from their obstetrician, midwife, or clinical pharmacist.

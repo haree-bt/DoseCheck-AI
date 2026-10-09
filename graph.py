@@ -5,6 +5,8 @@ from state import DoseCheckState
 # Teammates' modules
 from safety_guardrail import (
     detect_red_flags,
+    detect_toxic_dosage,
+    detect_vulnerable_populations,
     ConfidenceInputs,
     compute_confidence,
     classify_risk,
@@ -12,8 +14,14 @@ from safety_guardrail import (
 )
 from rag.retriever import retrieve_relevant_documents
 from interaction_tool import check_interaction
-from medication_tool import lookup_medicine
+from medication_tool import (
+    lookup_medicine,
+    extract_known_medicines,
+    canonicalize_drug,
+    MEDICINES
+)
 from escalation_tool import escalate_case
+from clinical_synthesizer import synthesize_clinical_assessment, format_clinical_markdown
 
 
 def log_step(state: DoseCheckState, node_name: str, output: dict, reason: str = "") -> dict:
@@ -25,18 +33,40 @@ def log_step(state: DoseCheckState, node_name: str, output: dict, reason: str = 
 # --- 1. Intake Agent ---
 def intake_agent(state: DoseCheckState) -> dict:
     question = state.get("user_question", "")
-    current_meds = state.get("current_medicines", [])
-    new_med = state.get("new_medicine", "")
+    current_meds = list(state.get("current_medicines", []))
+    new_med = state.get("new_medicine", "").strip()
+
+    # Extract all recognized medicine entities from question
+    found_meds = extract_known_medicines(question)
+
+    # If new_medicine was omitted, infer it from the question
+    if not new_med and found_meds:
+        new_med = found_meds[0]
+        extra_meds = found_meds[1:]
+    else:
+        extra_meds = [m for m in found_meds if m != canonicalize_drug(new_med)]
+
+    # Merge any remaining medicines into current_meds if not already present
+    current_meds_canon = [canonicalize_drug(m) for m in current_meds]
+    for em in extra_meds:
+        if em not in current_meds_canon:
+            current_meds.append(em)
+            current_meds_canon.append(em)
+
+    all_extracted_meds = list(dict.fromkeys(([new_med] if new_med else []) + current_meds))
 
     # Extract symptoms from question
     symptom_keywords = [
         "headache", "fever", "pain", "swelling", "breathing", "cough",
-        "nausea", "rash", "dizziness", "bleeding"
+        "nausea", "vomiting", "rash", "dizziness", "bleeding", "chest pain",
+        "stomach pain", "heartburn", "diarrhea"
     ]
     found_symptoms = [s for s in symptom_keywords if s in question.lower()]
 
     # Infer intent
-    if current_meds and new_med:
+    if len(all_extracted_meds) >= 2 or (current_meds and new_med):
+        intent = "drug_interaction_check"
+    elif any(w in question.lower() for w in ["combine", "together", "with", "take both", "interaction", "mix"]):
         intent = "drug_interaction_check"
     elif any(w in question.lower() for w in ["dose", "dosage", "how much", "max", "limit"]):
         intent = "dosage_guidance"
@@ -47,21 +77,47 @@ def intake_agent(state: DoseCheckState) -> dict:
 
     result = {
         "extracted_intent": intent,
-        "extracted_symptoms": found_symptoms
+        "extracted_symptoms": found_symptoms,
+        "extracted_medicines": all_extracted_meds,
+        "new_medicine": new_med,
+        "current_medicines": current_meds,
     }
-    return {**result, **log_step(state, "intake_agent", result, reason=f"intent={intent}")}
+    return {**result, **log_step(state, "intake_agent", result, reason=f"intent={intent}, meds={all_extracted_meds}")}
 
 
-# --- 2. Red-Flag Agent ---
+# --- 2. Red-Flag & Safety Agent ---
 def red_flag_agent(state: DoseCheckState) -> dict:
-    text_to_check = state.get("user_question", "") + " " + " ".join(state.get("extracted_symptoms", []))
+    text_to_check = (
+        state.get("user_question", "")
+        + " "
+        + state.get("new_medicine", "")
+        + " "
+        + " ".join(state.get("current_medicines", []))
+        + " "
+        + " ".join(state.get("extracted_symptoms", []))
+    )
+
     red_flags = detect_red_flags(text_to_check)
-    triggered = len(red_flags) > 0
-    reason = f"Potential medical emergency detected: {', '.join(red_flags)}" if triggered else None
+    toxic_info = detect_toxic_dosage(text_to_check)
+    vulnerable_pops = detect_vulnerable_populations(text_to_check)
+
+    triggered = len(red_flags) > 0 or (toxic_info is not None)
+
+    reasons = []
+    if red_flags:
+        reasons.append(f"Emergency symptoms: {', '.join(red_flags)}")
+    if toxic_info:
+        reasons.append(f"Toxic overdose: {toxic_info['reason']}")
+
+    reason = " | ".join(reasons) if reasons else None
+    pop_warnings = [p["message"] for p in vulnerable_pops]
 
     result = {
         "red_flag_triggered": triggered,
-        "red_flag_reason": reason
+        "red_flag_reason": reason,
+        "toxic_dose_detected": toxic_info is not None,
+        "toxic_dose_reason": toxic_info["reason"] if toxic_info else None,
+        "vulnerable_population_warnings": pop_warnings,
     }
     return {**result, **log_step(state, "red_flag_agent", result, reason=f"triggered={triggered}")}
 
@@ -81,11 +137,17 @@ def retrieval_agent(state: DoseCheckState) -> dict:
 
     chunks = [c["text"] for c in rag_output.get("top_chunks", [])]
     sources = [s["title"] for s in rag_output.get("sources", [])]
+    top_chunks = rag_output.get("top_chunks", [])
+    closest_distance = top_chunks[0].get("distance") if top_chunks else None
 
     result = {
         "retrieved_chunks": chunks,
         "retrieved_sources": sources,
-        "retrieved_context": rag_output.get("answer_context", "")
+        "retrieved_context": rag_output.get("answer_context", ""),
+        "retrieval_confidence": rag_output.get("confidence_score", 0.0),
+        "retrieval_distance": closest_distance,
+        "retrieved_top_chunks": top_chunks,
+        "retrieved_source_details": rag_output.get("sources", []),
     }
     return {
         **result,
@@ -93,7 +155,7 @@ def retrieval_agent(state: DoseCheckState) -> dict:
             state,
             "retrieval_agent",
             result,
-            reason=f"decision={rag_output['decision']}, confidence={rag_output['confidence_score']}"
+            reason=f"decision={rag_output['decision']}, confidence={rag_output['confidence_score']}, distance={closest_distance}"
         )
     }
 
@@ -107,32 +169,48 @@ RISK_TO_SEVERITY = {
 }
 
 def interaction_tool_node(state: DoseCheckState) -> dict:
-    current_meds = state.get("current_medicines", [])
+    current_meds = list(state.get("current_medicines", []))
     new_med = state.get("new_medicine", "")
+    all_meds = list(state.get("extracted_medicines", []))
 
     tool_res = None
     severity = "safe"
     explanation = "No potential interactions identified or single medication inquiry."
 
     if new_med and current_meds:
+        explanations = []
+        highest_severity = "safe"
+        severity_rank = {"safe": 0, "caution": 1, "unknown": 2, "dangerous": 3}
+
         for med in current_meds:
+            if canonicalize_drug(new_med) == canonicalize_drug(med):
+                continue
             check = check_interaction(new_med, med)
             tool_res = check
-            if check.get("found"):
-                risk = check.get("risk", "low")
-                severity = RISK_TO_SEVERITY.get(risk, "unknown")
-                explanation = check.get("message", "Interaction checked.")
-                if severity == "dangerous":
-                    break
-            else:
-                severity = "unknown"
-                explanation = check.get("message", "Interaction information unavailable in database.")
+            risk = check.get("risk", "unknown")
+            sev = RISK_TO_SEVERITY.get(risk, "unknown")
+            explanations.append(check.get("message", "Interaction checked."))
+            if severity_rank.get(sev, 0) > severity_rank.get(highest_severity, 0):
+                highest_severity = sev
+            if highest_severity == "dangerous":
+                break
+
+        severity = highest_severity
+        explanation = "\n\n".join(explanations) if explanations else "No interaction detected."
+    elif len(all_meds) >= 2:
+        check = check_interaction(all_meds[0], all_meds[1])
+        tool_res = check
+        risk = check.get("risk", "unknown")
+        severity = RISK_TO_SEVERITY.get(risk, "unknown")
+        explanation = check.get("message", "Interaction checked.")
     elif new_med:
         lookup = lookup_medicine(new_med)
         tool_res = lookup
         if lookup.get("found"):
             severity = "safe"
-            explanation = f"Verified medicine: {lookup['medicine']['name']} ({lookup['medicine']['category']})."
+            med_info = lookup["medicine"]
+            note = med_info.get("clinical_note", "")
+            explanation = f"Verified medicine: {med_info['name']} ({med_info['category']}). {note}"
         else:
             severity = "unknown"
             explanation = lookup.get("message", "Medicine not found in database.")
@@ -148,24 +226,13 @@ def interaction_tool_node(state: DoseCheckState) -> dict:
 # --- 5. Response / Drafter Agent ---
 def response_agent(state: DoseCheckState) -> dict:
     chunks = state.get("retrieved_chunks", [])
-    explanation = state.get("interaction_explanation", "")
-    new_med = state.get("new_medicine", "")
-
-    if chunks:
-        draft = (
-            f"Based on verified clinical guidelines for {new_med or 'your inquiry'}:\n"
-            f"{chunks[0]}\n\n"
-            f"Clinical Interaction Note: {explanation}"
-        )
-    else:
-        draft = (
-            f"Regarding {new_med or 'your inquiry'}: {explanation} "
-            "Please consult the manufacturer product leaflet or your doctor."
-        )
+    summary = synthesize_clinical_assessment({**state, "route": "safe_answer"})
+    draft = format_clinical_markdown(summary)
 
     result = {
         "draft_answer": draft,
-        "cited_chunks": chunks[:2] if chunks else []
+        "cited_chunks": chunks[:2] if chunks else [],
+        "clinical_summary": summary
     }
     return {**result, **log_step(state, "response_agent", result)}
 
@@ -175,11 +242,48 @@ def safety_critic(state: DoseCheckState) -> dict:
     chunks = state.get("retrieved_chunks", [])
     severity = state.get("interaction_severity", "unknown")
     red_flag = state.get("red_flag_triggered", False)
+    pop_warnings = state.get("vulnerable_population_warnings", [])
+    closest_dist = state.get("retrieval_distance")
+    rag_conf = state.get("retrieval_confidence") or 0.0
 
-    # Compute inputs for confidence scoring formula
-    retrieval_relevance = 0.90 if chunks else 0.25
-    completeness = 0.85 if len(chunks) >= 2 else (0.70 if chunks else 0.30)
-    safety_critic_score = 0.90 if severity == "safe" else (0.65 if severity == "caution" else 0.20)
+    # 1. Special vulnerable populations (pediatric, pregnancy) immediately restrict confidence
+    if pop_warnings:
+        result = {
+            "grounded": len(chunks) > 0,
+            "confidence_score": 0.25,
+            "risk_level": "HIGH",
+        }
+        return {
+            **result,
+            **log_step(
+                state,
+                "safety_critic",
+                result,
+                reason=f"grounded={len(chunks) > 0}, confidence=0.25, risk=HIGH (special population restriction)"
+            )
+        }
+
+    # 2. Dynamic retrieval relevance based on vector distance
+    if not chunks or (closest_dist is not None and closest_dist > 1.15):
+        retrieval_relevance = max(0.10, min(0.40, rag_conf))
+    elif closest_dist is not None:
+        relevance = 1.0 - (closest_dist * 0.35)
+        retrieval_relevance = round(max(0.35, min(0.96, relevance)), 2)
+    else:
+        retrieval_relevance = round(max(0.3, min(0.90, rag_conf)), 2)
+
+    # 3. Completeness score
+    completeness = 0.88 if len(chunks) >= 2 else (0.70 if chunks else 0.25)
+
+    # 4. Safety critic score derived from interaction severity
+    if severity == "safe":
+        safety_critic_score = 0.92
+    elif severity == "caution":
+        safety_critic_score = 0.68
+    elif severity == "dangerous":
+        safety_critic_score = 0.15
+    else:
+        safety_critic_score = 0.40
 
     inputs = ConfidenceInputs(
         retrieval_relevance=retrieval_relevance,
@@ -202,7 +306,7 @@ def safety_critic(state: DoseCheckState) -> dict:
             state,
             "safety_critic",
             result,
-            reason=f"grounded={grounded}, confidence={confidence}, risk={risk.value}"
+            reason=f"grounded={grounded}, distance={closest_dist}, confidence={confidence}, risk={risk.value}"
         )
     }
 
@@ -213,47 +317,56 @@ def router(state: DoseCheckState) -> dict:
     risk_level = state.get("risk_level", "LOW")
     confidence = state.get("confidence_score") or 0.0
     is_dangerous = state.get("interaction_severity") == "dangerous"
+    pop_warnings = state.get("vulnerable_population_warnings", [])
 
     # Router Safety Decision Invariant:
-    # 1. IF red flag detected -> ESCALATE
-    # 2. ELSE IF high risk -> ESCALATE
-    # 3. ELSE IF confidence < 0.70 -> ESCALATE
-    # 4. ELSE -> ANSWER
+    # 1. IF red flag detected -> ESCALATE (911)
+    # 2. ELSE IF vulnerable population detected -> ESCALATE (Specialist referral)
+    # 3. ELSE IF high risk -> ESCALATE
+    # 4. ELSE IF confidence < 0.70 -> ESCALATE
+    # 5. ELSE -> ANSWER
     must_escalate = (
         is_red_flag
+        or bool(pop_warnings)
         or risk_level == "HIGH"
         or is_dangerous
         or confidence < 0.70
         or not state.get("grounded", False)
     )
 
+    case_id = None
     if must_escalate:
         route = "escalate"
-        if is_red_flag:
-            final = (
-                "🚨 EMERGENCY ESCALATION: Potential medical emergency detected ("
-                + (state.get("red_flag_reason") or "Critical red-flag symptoms")
-                + "). Normal guidance is blocked. Please call 911 / emergency services immediately."
-            )
-        else:
-            escalation_record = escalate_case(
-                reason=state.get("red_flag_reason") or f"Risk: {risk_level}, Confidence: {confidence}",
-                context={
-                    "question": state.get("user_question"),
-                    "current_medicines": state.get("current_medicines"),
-                    "new_medicine": state.get("new_medicine")
-                }
-            )
-            final = (
-                f"⚠️ ESCALATED FOR CLINICAL REVIEW (Case ID: {escalation_record['case_id']}): "
-                f"Safety confidence is insufficient ({int(confidence * 100)}%) or interaction risk is present. "
-                "Please consult a physician or pharmacist directly before proceeding."
-            )
+        reason = (
+            state.get("red_flag_reason")
+            or (pop_warnings[0] if pop_warnings else None)
+            or (f"Dangerous interaction: {state.get('interaction_explanation')}" if is_dangerous else None)
+            or f"Risk: {risk_level}, Confidence: {confidence}"
+        )
+        rec = escalate_case(
+            reason=reason,
+            context={
+                "question": state.get("user_question"),
+                "current_medicines": state.get("current_medicines"),
+                "new_medicine": state.get("new_medicine")
+            }
+        )
+        case_id = rec.get("case_id")
     else:
         route = "safe_answer"
-        final = state.get("draft_answer")
 
-    result = {"route": route, "final_answer": final}
+    state_with_route = {**state, "route": route}
+    clinical_sum = synthesize_clinical_assessment(state_with_route)
+    if case_id:
+        clinical_sum["escalation_case_id"] = case_id
+
+    final = format_clinical_markdown(clinical_sum)
+
+    result = {
+        "route": route,
+        "final_answer": final,
+        "clinical_summary": clinical_sum
+    }
     return {**result, **log_step(state, "router", result, reason=f"route={route}")}
 
 

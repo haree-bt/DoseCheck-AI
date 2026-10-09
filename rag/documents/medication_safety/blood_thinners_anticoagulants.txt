@@ -1,0 +1,20 @@
+---
+title: Anticoagulant and Blood Thinner Safety and Drug Interaction Guidelines
+source: US Food and Drug Administration (FDA) & NIH MedlinePlus
+url: https://www.fda.gov/drugs/safe-use-blood-thinners
+category: medication_safety
+---
+
+OVERVIEW:
+Anticoagulants and antiplatelet agents (commonly known as blood thinners) include warfarin (Coumadin), apixaban (Eliquis), rivaroxaban (Xarelto), dabigatran (Pradaxa), and aspirin. These medications prevent dangerous blood clots, pulmonary embolisms, and strokes.
+
+CRITICAL DRUG INTERACTIONS TO AVOID:
+1. NSAIDs (NONSTEROIDAL ANTI-INFLAMMATORY DRUGS):
+- Never take ibuprofen (Advil, Motrin), naproxen (Aleve), or high-dose aspirin while on prescription blood thinners without strict physician supervision.
+- NSAIDs inhibit platelet aggregation and directly damage the gastric mucosal lining. Combining NSAIDs with anticoagulants dramatically multiplies the risk of fatal gastrointestinal hemorrhage and intracranial bleeding.
+
+2. ACETAMINOPHEN / PARACETAMOL:
+- Acetaminophen is generally the preferred OTC pain reliever for patients taking anticoagulants, but high doses (exceeding 2,000 mg daily) or frequent daily use can prolong INR and elevate bleeding risk in patients on warfarin.
+
+SIGNS OF SERIOUS INTERNAL BLEEDING:
+- Patients taking blood thinners must seek immediate emergency medical care (call 911) if experiencing unusual bruising, bleeding gums that won't stop, frequent nosebleeds, coughing up blood, vomiting blood or material resembling coffee grounds, or dark, black tarry stools.

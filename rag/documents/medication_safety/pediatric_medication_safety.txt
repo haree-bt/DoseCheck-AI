@@ -1,0 +1,20 @@
+---
+title: Pediatric Medication Safety, Dosing Principles, and Contraindications
+source: American Academy of Pediatrics (AAP) & Centers for Disease Control and Prevention (CDC)
+url: https://www.cdc.gov/childrens-health/medication-safety/
+category: medication_safety
+---
+
+OVERVIEW:
+Pediatric patients (infants, toddlers, and young children) metabolize medications fundamentally differently from adults. Adult over-the-counter (OTC) dosing guidelines must NEVER be extrapolated or administered to children.
+
+CORE PEDIATRIC SAFETY PRINCIPLES:
+1. WEIGHT-BASED DOSING:
+- All pediatric dosages of liquid acetaminophen and ibuprofen must be strictly calculated according to the child's exact current body weight in kilograms (mg/kg), NOT by age.
+- Always use the dedicated calibrated oral measuring syringe or cup supplied with the medication. Never use household kitchen teaspoons.
+
+2. CONTRAINDICATIONS AND AGE LIMITS:
+- IBUPROFEN: Do NOT give ibuprofen to infants under 6 months of age without direct instructions from a pediatrician.
+- ASPIRIN: Aspirin is strictly contraindicated in children and teenagers recovering from viral illnesses (flu, chickenpox) due to the risk of Reye's syndrome—a severe, often fatal condition causing acute brain and liver swelling.
+- MULTI-SYMPTOM COLD PRODUCTS: OTC cough and cold medicines should not be given to children under 4 years of age due to potential life-threatening respiratory depression and cardiac toxicity.
+- Any accidental ingestion or suspicion of pediatric overdose mandates an immediate call to Poison Control (1-800-222-1222) or emergency services (911).

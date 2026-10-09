@@ -1,54 +1,38 @@
-﻿"""
+"""
 rag/retriever.py
 Authoritative Medical Knowledge Retrieval with Confidence and Safety Routing.
 """
 
 from pathlib import Path
+import sys
 import chromadb
+
+# Ensure root directory is importable
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from safety_guardrail import (
+    detect_red_flags,
+    detect_toxic_dosage,
+    detect_vulnerable_populations
+)
 
 # Paths configuration
 BASE_DIR = Path(__file__).resolve().parent
 VECTORSTORE_DIR = BASE_DIR / "vectorstore"
 COLLECTION_NAME = "medication_guidelines"
 
-# Critical Red Flag Symptom Keywords that mandate immediate emergency escalation
-RED_FLAG_KEYWORDS = [
-    "difficulty breathing",
-    "shortness of breath",
-    "trouble breathing",
-    "cannot breathe",
-    "throat swelling",
-    "swollen throat",
-    "tongue swelling",
-    "swollen tongue",
-    "lip swelling",
-    "swollen lips",
-    "anaphylaxis",
-    "allergic reaction",
-    "vomiting blood",
-    "blood in vomit",
-    "coffee ground",
-    "black stool",
-    "chest pain",
-    "heart attack",
-    "fainted",
-    "passed out",
-    "unconscious",
-    "overdose",
-    "swallowed whole bottle",
-    "thunderclap headache",
-    "facial droop",
-    "slurred speech"
-]
-
 
 def check_for_red_flags(query: str) -> list[str]:
     """
-    Scans the user query for life-threatening red-flag keywords.
+    Scans the user query for life-threatening red flags and toxic overdoses.
     """
-    lowered_query = query.lower()
-    matched = [kw for kw in RED_FLAG_KEYWORDS if kw in lowered_query]
-    return matched
+    flags = detect_red_flags(query)
+    toxic = detect_toxic_dosage(query)
+    if toxic:
+        flags.append(f"toxic_dosage: {toxic['reason']}")
+    return flags
 
 
 def retrieve_relevant_documents(
@@ -92,6 +76,28 @@ def retrieve_relevant_documents(
             ],
             "top_chunks": [],
             "disclaimer": "Hackathon safety filter. Not medically validated."
+        }
+
+    # 1B. Check for Special Vulnerable Populations (Pediatric, Pregnancy)
+    vulnerable_pops = detect_vulnerable_populations(query)
+    high_risk_pops = [p for p in vulnerable_pops if p.get("severity") == "high"]
+    if high_risk_pops:
+        pop_msg = " | ".join(p["message"] for p in high_risk_pops)
+        return {
+            "query": query,
+            "decision": "FLAG",
+            "risk_level": "HIGH",
+            "confidence_score": 0.25,
+            "needs_escalation": True,
+            "escalation_reason": f"Special population safety restriction: {pop_msg}",
+            "answer_context": (
+                f"SPECIAL POPULATION SAFETY RESTRICTION: {pop_msg} "
+                "Standard adult dosage guidelines cannot be provided safely. Please consult a qualified "
+                "pediatrician, obstetrician, or pharmacist directly."
+            ),
+            "sources": [],
+            "top_chunks": [],
+            "disclaimer": "Hackathon safety protocol. Pediatric and pregnancy cases require licensed clinician review."
         }
 
     # 2. Connect to ChromaDB
